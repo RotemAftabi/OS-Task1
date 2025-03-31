@@ -10,9 +10,11 @@ uint64
 sys_exit(void)
 {
   int n;
-  argint(0, &n);
-  exit(n);
-  return 0;  // not reached
+  char msg[32]; 
+  argint(0, &n);                         
+  argstr(1, msg, sizeof(msg));          
+  exit(n, msg);                         
+  return 0;                             
 }
 
 uint64
@@ -30,9 +32,13 @@ sys_fork(void)
 uint64
 sys_wait(void)
 {
-  uint64 p;
-  argaddr(0, &p);
-  return wait(p);
+  uint64 addr;      // pointer to int status
+  uint64 msg_addr;  // pointer to char msg[32]
+
+  argaddr(0, &addr);
+  argaddr(1, &msg_addr);
+
+  return wait(addr, msg_addr);
 }
 
 uint64

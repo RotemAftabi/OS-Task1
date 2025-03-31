@@ -344,7 +344,7 @@ reparent(struct proc *p)
 // An exited process remains in the zombie state
 // until its parent calls wait().
 void
-exit(int status)
+exit(int status,char *msg)
 {
   struct proc *p = myproc();
 
@@ -376,6 +376,9 @@ exit(int status)
   acquire(&p->lock);
 
   p->xstate = status;
+  // save msg in p->exit_msg field
+  if(msg != 0)
+    safestrcpy(p->exit_msg, msg, MSGSIZE);
   p->state = ZOMBIE;
 
   release(&wait_lock);
@@ -388,7 +391,7 @@ exit(int status)
 // Wait for a child process to exit and return its pid.
 // Return -1 if this process has no children.
 int
-wait(uint64 addr)
+wait(uint64 addr, uint64 msg_addr)
 {
   struct proc *pp;
   int havekids, pid;
@@ -410,6 +413,11 @@ wait(uint64 addr)
           pid = pp->pid;
           if(addr != 0 && copyout(p->pagetable, addr, (char *)&pp->xstate,
                                   sizeof(pp->xstate)) < 0) {
+            release(&pp->lock);
+            release(&wait_lock);
+            return -1;
+          }
+          if (copyout(p->pagetable, msg_addr, pp->exit_msg, strlen(pp->exit_msg)+1) < 0) {
             release(&pp->lock);
             release(&wait_lock);
             return -1;
