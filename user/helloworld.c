@@ -2,6 +2,7 @@
 #include "user/user.h"
 int main() 
 {
-    write(1, "Hello World xv6\n",16);
-       exit(0,"");
+    char *msg = "Hello World xv6\n";
+    write(1, msg ,strlen(msg));
+    exit(0,"");
 }
