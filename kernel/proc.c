@@ -325,6 +325,64 @@ fork(void)
   return pid;
 }
 
+
+//task4.1
+//This system call will create n child processes and return their PIDs via the pointer pids.
+int
+forkn(int n, int* pids){
+  uint64 pids_addr;
+  argint(0, &n);
+  argaddr(1, &pids_addr);
+
+  if (n < 1 || n > 16)
+    return -1;
+
+  struct proc *p = myproc();
+  int pids[16];
+  int created = 0;
+  struct proc *children[16];
+
+  for (int i = 0; i < n; i++) {
+    struct proc *np = allocproc();
+    if (np == 0) {        //allocation failure
+      for (int j = 0; j < created; j++) {
+        acquire(&children[j]->lock);
+        children[j]->state = UNUSED;
+        release(&children[j]->lock);
+      }
+      return -1;
+    }
+
+    // Copy state from parent
+    np->parent = p;
+    np->sz = p->sz;
+    *(np->trapframe) = *(p->trapframe);
+    np->pagetable = proc_pagetable(np);
+    if (np->pagetable == 0) {
+      freeproc(np);
+      for (int j = 0; j < created; j++) {
+        acquire(&children[j]->lock);
+        children[j]->state = UNUSED;
+        release(&children[j]->lock);
+      }
+      return -1;
+    }
+
+    // Set child return value
+    np->trapframe->a0 = i + 1; // child gets 1-based index
+    np->state = RUNNABLE;
+
+    pids[created] = np->pid;
+    children[created] = np;
+    created++;
+  }
+
+  if (copyout(p->pagetable, pids_addr, (char *)pids, created * sizeof(int)) < 0) //try and copy the pids array
+    return -1;
+
+  return 0; // parent gets 0 on success
+}
+
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.
 void
@@ -441,6 +499,13 @@ wait(uint64 addr, uint64 msg_addr)
     sleep(p, &wait_lock);  //DOC: wait-sleep
   }
 }
+
+//This system call will wait for all child processes to finish.
+int 
+waitall(int* n, int* statuses){
+  
+}
+
 
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
