@@ -8,7 +8,7 @@ int main(void) {
     const int N = 1 << 16;  // 2^16
     int *array = (int *)malloc(N * sizeof(int));
     if (!array) {
-        fprintf(stderr, "Failed to allocate memory.\n");
+        fprintf(2, "Failed to allocate memory.\n");
         return 1;
     }
 
@@ -21,7 +21,7 @@ int main(void) {
     int pids[no_children];
     int procId = forkn(no_children, pids);
     if (procId < 0) {
-        fprintf(stderr, "forkn() failed.\n");
+        fprintf(2, "forkn() failed.\n");
         free(array);
         return 1;
     }
@@ -30,7 +30,7 @@ int main(void) {
         // Parent process
         int childSums[no_children];
         if (waitall(no_children, childSums) < 0) {
-            fprintf(stderr, "waitall() failed.\n");
+            fprintf(2, "waitall() failed.\n");
             free(array);
             return 1;
         }
