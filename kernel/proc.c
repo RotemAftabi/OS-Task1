@@ -283,7 +283,7 @@ fork(void)
   struct proc *np;
   struct proc *p = myproc();
 
-  // Allocate process.
+  // Allocate process
   if((np = allocproc()) == 0){
     return -1;
   }
@@ -338,49 +338,72 @@ forkn(int n, int* pids){
     return -1;
 
   struct proc *p = myproc();
-  int pids[16];
-  int created = 0;
-  struct proc *children[16];
+  int pids[16]; //save pids of the children
+  struct proc *children[16]; //pointers for children process (essential if we need to clean)
+  int created = 0; //number of children we create
 
   for (int i = 0; i < n; i++) {
     struct proc *np = allocproc();
     if (np == 0) {        //allocation failure
-      for (int j = 0; j < created; j++) {
-        acquire(&children[j]->lock);
-        children[j]->state = UNUSED;
-        release(&children[j]->lock);
-      }
-      return -1;
+      return cleanup_created(children, created);
     }
-
-    // Copy state from parent
-    np->parent = p;
-    np->sz = p->sz;
-    *(np->trapframe) = *(p->trapframe);
+  
+    //create new page table
     np->pagetable = proc_pagetable(np);
     if (np->pagetable == 0) {
       freeproc(np);
-      for (int j = 0; j < created; j++) {
-        acquire(&children[j]->lock);
-        children[j]->state = UNUSED;
-        release(&children[j]->lock);
-      }
-      return -1;
+      release(&np->lock);
+      return cleanup_created(children, created);
     }
 
-    // Set child return value
+    // copy memory from parent process
+    if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0) {
+      freeproc(np);
+      release(&np->lock);
+      return cleanup_created(children, created);
+    }
+
+    np->sz = p->sz;
+
+    *(np->trapframe) = *(p->trapframe);
     np->trapframe->a0 = i + 1; // child gets 1-based index
-    np->state = RUNNABLE;
 
-    pids[created] = np->pid;
+    //copy open files
+    for (int j = 0; j < NOFILE; j++)
+    if (p->ofile[j])
+      np->ofile[j] = filedup(p->ofile[j]);
+
+    np->cwd = idup(p->cwd);
+    safestrcpy(np->name, p->name, sizeof(p->name));
+    release(&np->lock);
+
+    // Copy state from parent
+    acquire(&wait_lock);
+    np->parent = p;
+    release(&wait_lock);
+
     children[created] = np;
+    pids[created] = np->pid;
     created++;
+    }
+
+    // copy the PID for user
+    if (copyout(p->pagetable, pids_addr, (char *)pids, sizeof(int) * created) < 0) {
+      return cleanup_created(children, created);
+    }
+    return 0; // parent gets 0 on success
+}
+
+// Cleans up all created child processes and returns -1 (for error handling flow)
+int
+cleanup_created(struct proc **children, int count)
+{
+  for (int i = 0; i < count; i++) {
+    acquire(&children[i]->lock);
+    children[i]->state = UNUSED;
+    release(&children[i]->lock);
   }
-
-  if (copyout(p->pagetable, pids_addr, (char *)pids, created * sizeof(int)) < 0) //try and copy the pids array
-    return -1;
-
-  return 0; // parent gets 0 on success
+  return -1;
 }
 
 // Pass p's abandoned children to init.
@@ -503,7 +526,55 @@ wait(uint64 addr, uint64 msg_addr)
 //This system call will wait for all child processes to finish.
 int 
 waitall(int* n, int* statuses){
-  
+  struct proc *p = myproc();
+  int num_children = 0; //number of process children that are ZOMBIE
+  int statuses_kernel[NPROC]; // Temporary kernel buffer to store exit statuses
+
+  while (1) {
+    int found = 0; // Did we find any child processes?
+    int collected = 0; // Did we collect at least one zombie child?
+
+    acquire(&wait_lock);
+
+    // Iterate through all processes in the system
+    for (struct proc *pp = proc; pp < &proc[NPROC]; pp++) {
+      if (pp->parent == p) { // Check if this process is a child of the current process
+        found = 1;
+
+        acquire(&pp->lock);
+        // If the child is in ZOMBIE state
+        if (pp->state == ZOMBIE) { 
+          statuses_kernel[num_children++] = pp->xstate;
+          freeproc(pp);
+          release(&pp->lock);
+          collected = 1;
+        } else {
+          release(&pp->lock);
+        }
+      }
+    }
+    release(&wait_lock);
+
+    // If no children at all were found
+    if (!found) {
+      int zero = 0;
+      if (copyout(p->pagetable, (uint64)n, (char*)&zero, sizeof(int)) < 0)
+        return -1;
+      return 0;
+    }    
+
+    // If at least one zombie child was collected
+    if (collected) {
+      if (copyout(p->pagetable, (uint64)n, (char*)&num_children, sizeof(int)) < 0)
+        return -1;
+      if (copyout(p->pagetable, (uint64)statuses, (char*)statuses_kernel, num_children * sizeof(int)) < 0)
+        return -1;
+      return 0; //success
+    }
+
+    // If children exist but none have finished yet
+    sleep(p, &wait_lock);
+  }
 }
 
 
