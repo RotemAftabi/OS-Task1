@@ -29,7 +29,7 @@ int main(void) {
     if (procId == 0) {
         // Parent process
         int childSums[no_children];
-        if (waitall(no_children, childSums) < 0) {
+        if (waitall(&no_children, childSums) < 0) {
             fprintf(2, "waitall() failed.\n");
             free(array);
             return 1;

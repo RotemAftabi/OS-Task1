@@ -325,6 +325,17 @@ fork(void)
   return pid;
 }
 
+// Cleans up all created child processes and returns -1 (for error handling flow)
+int
+cleanup_created(struct proc **children, int count)
+{
+  for (int i = 0; i < count; i++) {
+    acquire(&children[i]->lock);
+    children[i]->state = UNUSED;
+    release(&children[i]->lock);
+  }
+  return -1;
+}
 
 //task4.1
 //This system call will create n child processes and return their PIDs via the pointer pids.
@@ -338,7 +349,7 @@ forkn(int n, int* pids){
     return -1;
 
   struct proc *p = myproc();
-  int pids[16]; //save pids of the children
+  int pids_local[16]; //save pids of the children
   struct proc *children[16]; //pointers for children process (essential if we need to clean)
   int created = 0; //number of children we create
 
@@ -352,19 +363,17 @@ forkn(int n, int* pids){
     np->pagetable = proc_pagetable(np);
     if (np->pagetable == 0) {
       freeproc(np);
-      release(&np->lock);
       return cleanup_created(children, created);
     }
 
     // copy memory from parent process
     if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0) {
       freeproc(np);
-      release(&np->lock);
       return cleanup_created(children, created);
     }
-
     np->sz = p->sz;
 
+    // Copy trapframe
     *(np->trapframe) = *(p->trapframe);
     np->trapframe->a0 = i + 1; // child gets 1-based index
 
@@ -375,36 +384,30 @@ forkn(int n, int* pids){
 
     np->cwd = idup(p->cwd);
     safestrcpy(np->name, p->name, sizeof(p->name));
-    release(&np->lock);
 
-    // Copy state from parent
+    // Assign parent
     acquire(&wait_lock);
     np->parent = p;
     release(&wait_lock);
 
     children[created] = np;
-    pids[created] = np->pid;
+    pids_local[created] = np->pid;
     created++;
     }
 
-    // copy the PID for user
-    if (copyout(p->pagetable, pids_addr, (char *)pids, sizeof(int) * created) < 0) {
+    // Write PIDs back to user
+    if (copyout(p->pagetable, pids_addr, (char *)pids_local, sizeof(int) * created) < 0) {
       return cleanup_created(children, created);
+    }
+    // All good: mark children as RUNNABLE
+    for (int i = 0; i < created; i++) {
+      acquire(&children[i]->lock);
+      children[i]->state = RUNNABLE;
+      release(&children[i]->lock);
     }
     return 0; // parent gets 0 on success
 }
 
-// Cleans up all created child processes and returns -1 (for error handling flow)
-int
-cleanup_created(struct proc **children, int count)
-{
-  for (int i = 0; i < count; i++) {
-    acquire(&children[i]->lock);
-    children[i]->state = UNUSED;
-    release(&children[i]->lock);
-  }
-  return -1;
-}
 
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.

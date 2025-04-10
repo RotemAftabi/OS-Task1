@@ -32,13 +32,11 @@ sys_fork(void)
 uint64
 sys_wait(void)
 {
-  uint64 addr;      // pointer to int status
-  uint64 msg_addr;  // pointer to char msg[32]
-
-  argaddr(0, &addr);
+  uint64 p;      // pointer to user-space int
+  uint64 msg_addr;  // pointer to user-space char array
+  argaddr(0, &p);
   argaddr(1, &msg_addr);
-
-  return wait(addr, msg_addr);
+  return wait(p, msg_addr);
 }
 
 uint64
