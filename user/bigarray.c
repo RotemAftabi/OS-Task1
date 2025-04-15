@@ -28,8 +28,14 @@ int main(void) {
 
     if (procId == 0) {
         // Parent process
+        for (int i = 0; i < no_children; i++) {
+            printf("%d ", pids[i]);
+        }
+        printf("\n");
+
+        // Wait for all children
         int childSums[no_children];
-        if (waitall(&no_children, childSums) < 0) {
+                if (waitall(&no_children, childSums) < 0) {
             fprintf(2, "waitall() failed.\n");
             free(array);
             return 1;
@@ -48,7 +54,7 @@ int main(void) {
         return 0;
 
     } else {
-        // Child processes (1 through 4)
+        // Child processes 
         int subSize = N / no_children;
         int start = (procId - 1) * subSize;
         int end   = (procId == no_children) ? N : procId * subSize;

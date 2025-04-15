@@ -341,35 +341,33 @@ cleanup_created(struct proc **children, int count)
 //This system call will create n child processes and return their PIDs via the pointer pids.
 int
 forkn(int n, int* pids){
-  uint64 pids_addr;
-  argint(0, &n);
-  argaddr(1, &pids_addr);
-
+  
   if (n < 1 || n > 16)
     return -1;
 
   struct proc *p = myproc();
-  int pids_local[16]; //save pids of the children
-  struct proc *children[16]; //pointers for children process (essential if we need to clean)
-  int created = 0; //number of children we create
+  int pid[n]; //save pids of the children
+  struct proc *children[n]; //pointers for children process (essential if we need to clean)
 
   for (int i = 0; i < n; i++) {
     struct proc *np = allocproc();
     if (np == 0) {        //allocation failure
-      return cleanup_created(children, created);
+      return cleanup_created(children, i);
     }
   
     //create new page table
     np->pagetable = proc_pagetable(np);
     if (np->pagetable == 0) {
       freeproc(np);
-      return cleanup_created(children, created);
+      release(&np->lock);  
+      return cleanup_created(children, i);
     }
 
     // copy memory from parent process
     if (uvmcopy(p->pagetable, np->pagetable, p->sz) < 0) {
       freeproc(np);
-      return cleanup_created(children, created);
+      release(&np->lock);  
+      return cleanup_created(children, i);
     }
     np->sz = p->sz;
 
@@ -379,33 +377,34 @@ forkn(int n, int* pids){
 
     //copy open files
     for (int j = 0; j < NOFILE; j++)
-    if (p->ofile[j])
-      np->ofile[j] = filedup(p->ofile[j]);
-
+      if(p->ofile[i])
+        np->ofile[i] = filedup(p->ofile[i]);
     np->cwd = idup(p->cwd);
+
     safestrcpy(np->name, p->name, sizeof(p->name));
+
+    pid[i] = np->pid;
+    release(&np->lock); 
 
     // Assign parent
     acquire(&wait_lock);
     np->parent = p;
     release(&wait_lock);
 
-    children[created] = np;
-    pids_local[created] = np->pid;
-    created++;
-    }
+    children[i] = np; //add child to proc array
+  }
+  // Write PIDs back to user
+  if (copyout(p->pagetable, (uint64)pids, (char *)&pid[0], sizeof(int) * n) < 0) {
+    return cleanup_created(children, n);
+  }
 
-    // Write PIDs back to user
-    if (copyout(p->pagetable, pids_addr, (char *)pids_local, sizeof(int) * created) < 0) {
-      return cleanup_created(children, created);
-    }
-    // All good: mark children as RUNNABLE
-    for (int i = 0; i < created; i++) {
-      acquire(&children[i]->lock);
-      children[i]->state = RUNNABLE;
-      release(&children[i]->lock);
-    }
-    return 0; // parent gets 0 on success
+  // mark children as RUNNABLE
+  for (int i = 0; i < n; i++) {
+    acquire(&children[i]->lock);
+    children[i]->state = RUNNABLE;
+    release(&children[i]->lock);
+  }
+  return 0; // parent gets 0 on success
 }
 
 
@@ -529,57 +528,54 @@ wait(uint64 addr, uint64 msg_addr)
 //This system call will wait for all child processes to finish.
 int 
 waitall(int* n, int* statuses){
-  struct proc *p = myproc();
-  int num_children = 0; //number of process children that are ZOMBIE
-  int statuses_kernel[NPROC]; // Temporary kernel buffer to store exit statuses
+  
+  struct proc *p = myproc(); //ParentProc
+  struct proc *pp;
+  int zombieCount = 0; 
+  int exit_status[NPROC]; // Temporary kernel buffer to store exit statuses
+
+  acquire(&wait_lock);
 
   while (1) {
-    int found = 0; // Did we find any child processes?
-    int collected = 0; // Did we collect at least one zombie child?
-
-    acquire(&wait_lock);
+    int numOfKids = 0; // number of child process
 
     // Iterate through all processes in the system
-    for (struct proc *pp = proc; pp < &proc[NPROC]; pp++) {
-      if (pp->parent == p) { // Check if this process is a child of the current process
-        found = 1;
-
+    for (pp = proc; pp < &proc[NPROC]; pp++) {
+      if (pp->parent == p) { // if this process is a child of the current process
+        numOfKids++;
         acquire(&pp->lock);
-        // If the child is in ZOMBIE state
         if (pp->state == ZOMBIE) { 
-          statuses_kernel[num_children++] = pp->xstate;
+          exit_status[zombieCount++] = pp->xstate;
           freeproc(pp);
-          release(&pp->lock);
-          collected = 1;
-        } else {
-          release(&pp->lock);
         }
+        release(&pp->lock);
       }
     }
-    release(&wait_lock);
 
+    if(killed(p)){ 
+      release(&wait_lock); 
+      return -1;
+    }
     // If no children at all were found
-    if (!found) {
+    if (numOfKids == 0) {
       int zero = 0;
       if (copyout(p->pagetable, (uint64)n, (char*)&zero, sizeof(int)) < 0)
         return -1;
+      release(&wait_lock);
       return 0;
     }    
-
-    // If at least one zombie child was collected
-    if (collected) {
-      if (copyout(p->pagetable, (uint64)n, (char*)&num_children, sizeof(int)) < 0)
+    if (numOfKids == zombieCount) { 
+      if (copyout(p->pagetable, (uint64)n, (char*)&zombieCount, sizeof(int)) < 0)
         return -1;
-      if (copyout(p->pagetable, (uint64)statuses, (char*)statuses_kernel, num_children * sizeof(int)) < 0)
+      if (copyout(p->pagetable, (uint64)statuses, (char*)exit_status, NPROC * sizeof(int)) < 0)
         return -1;
+      release(&wait_lock);
       return 0; //success
     }
-
-    // If children exist but none have finished yet
-    sleep(p, &wait_lock);
+    // If there are children but not all are finished, sleep
+    sleep(p, &wait_lock); 
   }
 }
-
 
 // Per-CPU process scheduler.
 // Each CPU calls scheduler() after setting itself up.
