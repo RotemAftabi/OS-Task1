@@ -46,7 +46,7 @@ int main(void) {
         }
 
         for (int i = 0; i < no_children; i++) {
-            printf("Child PID: %d, Exit Status: %d\n", pids[i], childSums[i]);
+            printf("Child PID: %d, Partial sum: %d\n", pids[i], childSums[i]);
         }
 
         // Sum up partial sums from children
@@ -56,10 +56,10 @@ int main(void) {
         }
 
         // Print the final total sum
-        printf("Final sum: %lld\n", total);
+        printf("Final sum: %d\n", (int)total);
 
         free(array);
-        return 0;
+        exit(0, "");
 
     } else {
         // Child processes 
@@ -73,7 +73,7 @@ int main(void) {
         }
 
         // Print the partial sum
-        printf("Child %d partial sum: %lld\n", procId, partialSum);
+        //printf("Child %d partial sum: %lld\n", procId, partialSum);
 
         // Return partial sum as exit status 
         exit((int)partialSum, "");
