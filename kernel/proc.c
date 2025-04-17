@@ -373,17 +373,20 @@ forkn(int n, int* pids){
 
     // Copy trapframe
     *(np->trapframe) = *(p->trapframe);
-    np->trapframe->a0 = i + 1; // child gets 1-based index
+    np->trapframe->a0 = (i + 1); // child gets 1-based index
 
     //copy open files
-    for (int j = 0; j < NOFILE; j++)
-      if(p->ofile[i])
-        np->ofile[i] = filedup(p->ofile[i]);
+    for (int j = 0; j < NOFILE; j++){
+      if(p->ofile[j])
+        np->ofile[j] = filedup(p->ofile[j]);
+    }
     np->cwd = idup(p->cwd);
 
     safestrcpy(np->name, p->name, sizeof(p->name));
 
     pid[i] = np->pid;
+    printf("Forked child PID: %d\n", np->pid);
+
     release(&np->lock); 
 
     // Assign parent
@@ -394,7 +397,7 @@ forkn(int n, int* pids){
     children[i] = np; //add child to proc array
   }
   // Write PIDs back to user
-  if (copyout(p->pagetable, (uint64)pids, (char *)&pid[0], sizeof(int) * n) < 0) {
+  if (copyout(p->pagetable, (uint64)pids, (char*)&pid[0], sizeof(int) * n)< 0) {
     return cleanup_created(children, n);
   }
 
@@ -406,7 +409,6 @@ forkn(int n, int* pids){
   }
   return 0; // parent gets 0 on success
 }
-
 
 // Pass p's abandoned children to init.
 // Caller must hold wait_lock.
@@ -531,14 +533,15 @@ waitall(int* n, int* statuses){
   
   struct proc *p = myproc(); //ParentProc
   struct proc *pp;
-  int zombieCount = 0; 
+  int zombieCount =0;
+  int numOfKids=0;
   int exit_status[NPROC]; // Temporary kernel buffer to store exit statuses
 
   acquire(&wait_lock);
 
-  while (1) {
-    int numOfKids = 0; // number of child process
-
+  while(1) {
+    numOfKids = 0; // number of child process
+    zombieCount=0;
     // Iterate through all processes in the system
     for (pp = proc; pp < &proc[NPROC]; pp++) {
       if (pp->parent == p) { // if this process is a child of the current process
@@ -546,20 +549,18 @@ waitall(int* n, int* statuses){
         acquire(&pp->lock);
         if (pp->state == ZOMBIE) { 
           exit_status[zombieCount++] = pp->xstate;
-          freeproc(pp);
         }
         release(&pp->lock);
       }
     }
-
+    
     if(killed(p)){ 
       release(&wait_lock); 
       return -1;
     }
-    // If no children at all were found
+    // If no child processes are found
     if (numOfKids == 0) {
-      int zero = 0;
-      if (copyout(p->pagetable, (uint64)n, (char*)&zero, sizeof(int)) < 0)
+      if (copyout(p->pagetable, (uint64)n, (char*)&zombieCount, sizeof(int)) < 0)
         return -1;
       release(&wait_lock);
       return 0;
@@ -567,8 +568,16 @@ waitall(int* n, int* statuses){
     if (numOfKids == zombieCount) { 
       if (copyout(p->pagetable, (uint64)n, (char*)&zombieCount, sizeof(int)) < 0)
         return -1;
-      if (copyout(p->pagetable, (uint64)statuses, (char*)exit_status, NPROC * sizeof(int)) < 0)
+      if (copyout(p->pagetable, (uint64)statuses, (char*)&exit_status[0] , NPROC * sizeof(int)) < 0)
         return -1;
+
+      for (pp = proc; pp < &proc[NPROC]; pp++) {
+        if (pp->parent == p) {
+          acquire(&pp->lock);
+          freeproc(pp);  
+          release(&pp->lock);
+        }
+      }
       release(&wait_lock);
       return 0; //success
     }

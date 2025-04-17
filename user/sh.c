@@ -4,7 +4,6 @@
 #include "user/user.h"
 #include "kernel/fcntl.h"
 
-char msg[32];
 
 // Parsed command representation
 #define EXEC  1
@@ -60,6 +59,7 @@ void runcmd(struct cmd*) __attribute__((noreturn));
 void
 runcmd(struct cmd *cmd)
 {
+  char msg[32];
   int p[2];
   struct backcmd *bcmd;
   struct execcmd *ecmd;
@@ -150,6 +150,7 @@ getcmd(char *buf, int nbuf)
 int
 main(void)
 {
+  char msg[32];
   static char buf[100];
   int fd;
 

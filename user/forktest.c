@@ -5,7 +5,6 @@
 #include "kernel/stat.h"
 #include "user/user.h"
 
-char msg[32];
 #define N  1000
 
 void
@@ -33,14 +32,13 @@ forktest(void)
     print("fork claimed to work N times!\n");
     exit(1,"");
   }
-
+  char msg[32];
   for(; n > 0; n--){
     if(wait(0,msg) < 0){
       print("wait stopped early\n");
       exit(1,"");
     }
   }
-
   if(wait(0,msg) != -1){
     print("wait got too many\n");
     exit(1,"");

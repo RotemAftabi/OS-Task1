@@ -12,7 +12,6 @@
 #include "kernel/memlayout.h"
 #include "kernel/riscv.h"
 
-char msg[32];
 // from FreeBSD.
 int
 do_rand(unsigned long *ctx)
@@ -51,6 +50,7 @@ rand(void)
 void
 go(int which_child)
 {
+  char msg[32];
   int fd = -1;
   static char buf[999];
   char *break0 = sbrk(0);
@@ -144,6 +144,7 @@ go(int which_child)
         exit(1,"");
       }
       kill(pid);
+      char msg[32];
       wait(0,msg);
     } else if(what == 18){
       int pid = fork();
@@ -297,6 +298,7 @@ go(int which_child)
 void
 iter()
 {
+  char msg[32];
   unlink("a");
   unlink("b");
   
@@ -337,6 +339,7 @@ iter()
 int
 main()
 {
+  char msg[32];
   while(1){
     int pid = fork();
     if(pid == 0){

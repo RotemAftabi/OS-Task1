@@ -1,6 +1,7 @@
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "user/user.h"
+#define NPROC        64  
 
 
 int main(void) {
@@ -20,25 +21,32 @@ int main(void) {
     // We'll create 4 child processes; set up a pids array for storing child PIDs
     int pids[no_children];
     int procId = forkn(no_children, pids);
+
     if (procId < 0) {
         fprintf(2, "forkn() failed.\n");
         free(array);
         return 1;
     }
 
-    if (procId == 0) {
+    else if (procId == 0) {
         // Parent process
-        for (int i = 0; i < no_children; i++) {
-            printf("%d ", pids[i]);
-        }
-        printf("\n");
-
-        // Wait for all children
         int childSums[no_children];
-                if (waitall(&no_children, childSums) < 0) {
+        int numChildrenFinished = 0;
+        
+        if (waitall(&numChildrenFinished, childSums) < 0) {
             fprintf(2, "waitall() failed.\n");
             free(array);
             return 1;
+        }
+        //Check that the number of children that waitall returns is equal to the number of children created by forkn.
+        if (numChildrenFinished != no_children) {
+            fprintf(2, "Mismatch in the number of children. Expected %d but got %d.\n", no_children, numChildrenFinished);
+            free(array);
+            return 1;
+        }
+
+        for (int i = 0; i < no_children; i++) {
+            printf("Child PID: %d, Exit Status: %d\n", pids[i], childSums[i]);
         }
 
         // Sum up partial sums from children
@@ -67,7 +75,7 @@ int main(void) {
         // Print the partial sum
         printf("Child %d partial sum: %lld\n", procId, partialSum);
 
-        // Return partial sum as exit status (truncated to int)
+        // Return partial sum as exit status 
         exit((int)partialSum, "");
     }
 }

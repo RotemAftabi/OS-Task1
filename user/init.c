@@ -9,12 +9,12 @@
 #include "user/user.h"
 #include "kernel/fcntl.h"
 
-char msg[32];
 char *argv[] = { "sh", 0 };
 
 int
 main(void)
 {
+  char msg[32];
   int pid, wpid;
 
   if(open("console", O_RDWR) < 0){

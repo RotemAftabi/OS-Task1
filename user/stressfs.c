@@ -13,10 +13,10 @@
 #include "kernel/fs.h"
 #include "kernel/fcntl.h"
 
-char msg[32];
 int
 main(int argc, char *argv[])
 {
+  char msg[32];
   int fd, i;
   char path[] = "stressfs0";
   char data[512];
