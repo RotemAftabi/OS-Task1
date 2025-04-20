@@ -1,7 +1,6 @@
 #include "kernel/types.h"
 #include "kernel/stat.h"
 #include "user/user.h"
-#define NPROC        64  
 
 
 int main(void) {
@@ -73,7 +72,7 @@ int main(void) {
         }
 
         // Print the partial sum
-        //printf("Child %d partial sum: %lld\n", procId, partialSum);
+        printf("Child %d partial sum: %lld\n", procId, partialSum);
 
         // Return partial sum as exit status 
         exit((int)partialSum, "");

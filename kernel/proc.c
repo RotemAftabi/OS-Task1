@@ -542,12 +542,14 @@ waitall(int* n, int* statuses){
   while(1) {
     numOfKids = 0; // number of child process
     zombieCount=0;
+
     // Iterate through all processes in the system
     for (pp = proc; pp < &proc[NPROC]; pp++) {
       if (pp->parent == p) { // if this process is a child of the current process
         numOfKids++;
         acquire(&pp->lock);
         if (pp->state == ZOMBIE) { 
+          //found a zombie child
           exit_status[zombieCount++] = pp->xstate;
         }
         release(&pp->lock);
@@ -560,17 +562,14 @@ waitall(int* n, int* statuses){
     }
     // If no child processes are found
     if (numOfKids == 0) {
-      if (copyout(p->pagetable, (uint64)n, (char*)&zombieCount, sizeof(int)) < 0)
+      if (copyout(p->pagetable, (uint64)n, (char*)&zombieCount, sizeof(int)) < 0){
+        release(&wait_lock);
         return -1;
+      }
       release(&wait_lock);
       return 0;
     }    
     if (numOfKids == zombieCount) { 
-      if (copyout(p->pagetable, (uint64)n, (char*)&zombieCount, sizeof(int)) < 0)
-        return -1;
-      if (copyout(p->pagetable, (uint64)statuses, (char*)&exit_status[0] , NPROC * sizeof(int)) < 0)
-        return -1;
-
       for (pp = proc; pp < &proc[NPROC]; pp++) {
         if (pp->parent == p) {
           acquire(&pp->lock);
@@ -578,6 +577,15 @@ waitall(int* n, int* statuses){
           release(&pp->lock);
         }
       }
+      if (copyout(p->pagetable, (uint64)n, (char*)&zombieCount, sizeof(int)) < 0){
+        release(&wait_lock);
+        return -1;
+      }
+      if (copyout(p->pagetable, (uint64)statuses, (char*)&exit_status , zombieCount * sizeof(int)) < 0){
+        release(&wait_lock);
+        return -1;
+      }
+
       release(&wait_lock);
       return 0; //success
     }
